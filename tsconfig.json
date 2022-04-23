@@ -1,0 +1,33 @@
+{
+    "compileOnSave": false,
+    "compilerOptions": {
+        "composite": true,
+        "declaration": true,
+        "emitDecoratorMetadata": true,
+        "esModuleInterop": true,
+        "experimentalDecorators": true,
+        "forceConsistentCasingInFileNames": true,
+        "importHelpers": true,
+        "incremental": true,
+        "lib": ["dom", "es2019"],
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "noEmit": false,
+        "noFallthroughCasesInSwitch": true,
+        "noImplicitAny": true,
+        "noImplicitReturns": true,
+        "outDir": "./bin",
+        "pretty": true,
+        "rootDir": "./src",
+        "skipDefaultLibCheck": true,
+        "skipLibCheck": true,
+        "sourceMap": true,
+        "strict": true,
+        "target": "es2018",
+        "typeRoots": ["node_modules/@types"],
+        "types": ["node"]
+    },
+    "exclude": ["node_modules", "tmp"],
+    "include": ["src/**/*.ts"]
+}
+
