@@ -1,9 +1,12 @@
-import * as pulumi from "@pulumi/pulumi";
-import * as aws from "@pulumi/aws";
-import * as awsx from "@pulumi/awsx";
+import * as pulumi from '@pulumi/pulumi'
+import { UnifiController } from './unifi'
 
-// Create an AWS resource (S3 Bucket)
-const bucket = new aws.s3.Bucket("my-bucket");
+const unifiConfig = new pulumi.Config('unifi')
 
-// Export the name of the bucket
-export const bucketName = bucket.id;
+const homeUnifiController = new UnifiController('home-unifi-controller', {
+  controllerVersion: unifiConfig.require('controller-version'),
+  zoneName: unifiConfig.require('route53-zone-name'),
+  hostname: unifiConfig.require('hostname'),
+})
+
+export const homeUnifiControllerWebAdminUrl = homeUnifiController.webAdminUrl

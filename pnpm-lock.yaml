@@ -7,6 +7,7 @@ specifiers:
   '@types/node': ^14.18.13
   '@typescript-eslint/eslint-plugin': ^4.33.0
   '@typescript-eslint/parser': ^4.31.0
+  '@wanews/pulumi-certificate-validation': ^0.5.1
   eslint: ^7.32.0
   eslint-config-prettier: ^8.3.0
   prettier: ^2.5.1
@@ -25,6 +26,7 @@ devDependencies:
   '@types/node': 14.18.13
   '@typescript-eslint/eslint-plugin': 4.33.0_0c49e12669280545a7ea3f36dba6eb0a
   '@typescript-eslint/parser': 4.33.0_eslint@7.32.0+typescript@4.6.3
+  '@wanews/pulumi-certificate-validation': 0.5.1_1cb5edee8dfdceaf845f9d47c62a0be6
   eslint: 7.32.0
   eslint-config-prettier: 8.5.0_eslint@7.32.0
   prettier: 2.6.2
@@ -373,6 +375,16 @@ packages:
     dependencies:
       '@typescript-eslint/types': 4.33.0
       eslint-visitor-keys: 2.1.0
+    dev: true
+
+  /@wanews/pulumi-certificate-validation/0.5.1_1cb5edee8dfdceaf845f9d47c62a0be6:
+    resolution: {integrity: sha512-GXySJ24Xw5E01+3LgCSP1+Qb9Cg9zL0x3ByhwsIhQuae4eaxnAPXx4WhaFzenltCIgethAibz1XfC/Rz1j83+A==}
+    peerDependencies:
+      '@pulumi/aws': ^5.0.0
+      '@pulumi/pulumi': ^3.0.0
+    dependencies:
+      '@pulumi/aws': 5.2.0
+      '@pulumi/pulumi': 3.30.0
     dev: true
 
   /acorn-jsx/5.3.2_acorn@7.4.1:
