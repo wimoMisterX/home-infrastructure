@@ -42,7 +42,7 @@ export class UnifiController extends pulumi.ComponentResource {
         healthCheck: {
           protocol: 'HTTPS',
           path: '/',
-          matcher: '200,302',
+          matcher: '302',
         },
       },
       { parent: this },
@@ -80,7 +80,7 @@ export class UnifiController extends pulumi.ComponentResource {
           protocol: 'HTTPS',
           path: '/',
           port: '8443',
-          matcher: '200,302',
+          matcher: '302',
         },
       },
       { parent: this },
