@@ -12,6 +12,7 @@ export class UnifiController extends pulumi.ComponentResource {
       vpc: awsx.ec2.Vpc
       ecsCluster: awsx.ecs.Cluster
       ecsSubnetIds: pulumi.Input<string[]>
+      efsSubnetIds: pulumi.Input<string[]>
       albCertArn: pulumi.Input<string>
       alb: awsx.elasticloadbalancingv2.ApplicationLoadBalancer
       nlb: awsx.elasticloadbalancingv2.NetworkLoadBalancer
@@ -153,6 +154,41 @@ export class UnifiController extends pulumi.ComponentResource {
       'allow everywhere',
     )
 
+    const efs = new aws.efs.FileSystem(`${name}-efs`, {}, { parent: this })
+    const efsSecurityGroup = new awsx.ec2.SecurityGroup(
+      `${name}-efs-sg`,
+      {
+        vpc: args.vpc,
+        ingress: [
+          {
+            description: 'allow access from unifi controller',
+            protocol: 'tcp',
+            fromPort: 2049,
+            toPort: 2049,
+            sourceSecurityGroupId: taskSecurityGroup.id,
+          },
+        ],
+      },
+      { parent: this },
+    )
+
+    const efsMountTargets = pulumi
+      .output(args.efsSubnetIds)
+      .apply((subnetIds) =>
+        subnetIds.map(
+          (subnetId) =>
+            new aws.efs.MountTarget(
+              `${name}-mount-target-${subnetId}`,
+              {
+                fileSystemId: efs.id,
+                subnetId,
+                securityGroups: [efsSecurityGroup.id],
+              },
+              { parent: this },
+            ),
+        ),
+      )
+
     new awsx.ecs.FargateService(
       `${name}-fargate-service`,
       {
@@ -160,7 +196,7 @@ export class UnifiController extends pulumi.ComponentResource {
         subnets: args.ecsSubnetIds,
         securityGroups: [taskSecurityGroup],
         assignPublicIp: false,
-        healthCheckGracePeriodSeconds: 60,
+        healthCheckGracePeriodSeconds: 300,
         taskDefinitionArgs: {
           containers: {
             'unifi-controller': {
@@ -168,14 +204,6 @@ export class UnifiController extends pulumi.ComponentResource {
               memory: 1024,
               cpu: 1024,
               environment: [
-                {
-                  name: 'PUID',
-                  value: '1000',
-                },
-                {
-                  name: 'PGID',
-                  value: '1000',
-                },
                 {
                   name: 'MEM_LIMIT',
                   value: '1024',
@@ -190,12 +218,21 @@ export class UnifiController extends pulumi.ComponentResource {
                 albGuestPortalTargetGroup,
                 nlbStunListener,
               ],
+              mountPoints: [
+                { sourceVolume: 'efs-data', containerPath: '/config' },
+              ],
             },
           },
+          volumes: [
+            {
+              name: 'efs-data',
+              efsVolumeConfiguration: { fileSystemId: efs.id },
+            },
+          ],
         },
         desiredCount: 1,
       },
-      { parent: this },
+      { parent: this, dependsOn: efsMountTargets },
     )
 
     this.webAdminUrl = pulumi.interpolate`https://${args.hostname}:8443`

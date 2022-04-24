@@ -64,6 +64,7 @@ const nlb = new awsx.lb.NetworkLoadBalancer('home-nlb', {
 const homeUnifiController = new UnifiController('home-unifi-controller', {
   vpc,
   ecsSubnetIds,
+  efsSubnetIds,
   ecsCluster,
   alb,
   albCertArn: albCert.validCertificateArn,
