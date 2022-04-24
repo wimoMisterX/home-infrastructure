@@ -1,7 +1,7 @@
 import * as pulumi from '@pulumi/pulumi'
 import * as aws from '@pulumi/aws'
 import * as awsx from '@pulumi/awsx'
-import { getSubnetIds, setupAlbListener, setupNlbListener } from './utils'
+import { getSubnetIds } from './utils'
 import { ValidateCertificate } from '@wanews/pulumi-certificate-validation'
 import { UnifiController } from './unifi'
 
@@ -56,37 +56,18 @@ const alb = new awsx.lb.ApplicationLoadBalancer('home-alb', {
   securityGroups: [albSecurityGroup],
 })
 
-const albHttps8443Listener = setupAlbListener(
-  alb,
-  'home-alb',
-  8443,
-  'HTTPS',
-  albCert.validCertificateArn,
-)
-const albHttps8843Listener = setupAlbListener(
-  alb,
-  'home-alb',
-  8843,
-  'HTTPS',
-  albCert.validCertificateArn,
-)
-
 const nlb = new awsx.lb.NetworkLoadBalancer('home-nlb', {
   subnets: lbSubnetIds,
   vpc,
 })
 
-setupNlbListener(nlb, 'home-nlb', 8443, 'TCP', albHttps8443Listener)
-setupNlbListener(nlb, 'home-nlb', 8843, 'TCP', albHttps8843Listener)
-const nlbUdp3478Listener = setupNlbListener(nlb, 'home-nlb', 3478, 'UDP')
-
 const homeUnifiController = new UnifiController('home-unifi-controller', {
   vpc,
   ecsSubnetIds,
   ecsCluster,
-  https8443Listener: albHttps8443Listener,
-  https8843Listener: albHttps8843Listener,
-  udp3478Listener: nlbUdp3478Listener,
+  alb,
+  albCertArn: albCert.validCertificateArn,
+  nlb,
   controllerVersion: unifiConfig.require('controller-version'),
   zoneId: zone.zoneId,
   hostname: unifiConfig.require('hostname'),

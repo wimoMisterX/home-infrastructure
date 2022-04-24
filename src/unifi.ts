@@ -1,6 +1,7 @@
 import * as pulumi from '@pulumi/pulumi'
 import * as aws from '@pulumi/aws'
 import * as awsx from '@pulumi/awsx'
+import { setupAlbListener, setupNlbListener } from './utils'
 
 export class UnifiController extends pulumi.ComponentResource {
   webAdminUrl: pulumi.Output<string>
@@ -11,9 +12,9 @@ export class UnifiController extends pulumi.ComponentResource {
       vpc: awsx.ec2.Vpc
       ecsCluster: awsx.ecs.Cluster
       ecsSubnetIds: pulumi.Input<string[]>
-      https8443Listener: awsx.elasticloadbalancingv2.ApplicationListener
-      https8843Listener: awsx.elasticloadbalancingv2.ApplicationListener
-      udp3478Listener: awsx.elasticloadbalancingv2.NetworkListener
+      albCertArn: pulumi.Input<string>
+      alb: awsx.elasticloadbalancingv2.ApplicationLoadBalancer
+      nlb: awsx.elasticloadbalancingv2.NetworkLoadBalancer
       controllerVersion: pulumi.Input<string>
       hostname: pulumi.Input<string>
       zoneId: pulumi.Input<string>
@@ -22,14 +23,15 @@ export class UnifiController extends pulumi.ComponentResource {
   ) {
     super('unifi-controller', name, args, opts)
 
-    if (!args.udp3478Listener.defaultTargetGroup) {
-      throw new pulumi.RunError('no default target group for listener')
-    }
-
-    const nlb = args.udp3478Listener.loadBalancer
-    const alb = args.https8443Listener.loadBalancer
-
-    const albWebAdminTargetGroup = alb.createTargetGroup(
+    const albWebAdminListener = setupAlbListener(
+      args.alb,
+      'home-alb',
+      8443,
+      'HTTPS',
+      args.albCertArn,
+    )
+    setupNlbListener(args.nlb, 'home-nlb', 8443, 'TCP', albWebAdminListener)
+    const albWebAdminTargetGroup = args.alb.createTargetGroup(
       `${name}-alb-web-admin-tg`,
       {
         name: `${name}-alb-8443`,
@@ -44,7 +46,7 @@ export class UnifiController extends pulumi.ComponentResource {
       },
       { parent: this },
     )
-    args.https8443Listener.addListenerRule(
+    albWebAdminListener.addListenerRule(
       `${name}-alb-web-admin-rule`,
       {
         conditions: [{ hostHeader: { values: [args.hostname] } }],
@@ -58,7 +60,15 @@ export class UnifiController extends pulumi.ComponentResource {
       { parent: this },
     )
 
-    const albGuestPortalTargetGroup = alb.createTargetGroup(
+    const albGuestPortalListener = setupAlbListener(
+      args.alb,
+      'home-alb',
+      8843,
+      'HTTPS',
+      args.albCertArn,
+    )
+    setupNlbListener(args.nlb, 'home-nlb', 8843, 'TCP', albGuestPortalListener)
+    const albGuestPortalTargetGroup = args.alb.createTargetGroup(
       `${name}-alb-guest-portal-tg`,
       {
         name: `${name}-alb-8843`,
@@ -74,7 +84,7 @@ export class UnifiController extends pulumi.ComponentResource {
       },
       { parent: this },
     )
-    args.https8843Listener.addListenerRule(
+    albGuestPortalListener.addListenerRule(
       `${name}-alb-guest-portal-rule`,
       {
         conditions: [{ hostHeader: { values: [args.hostname] } }],
@@ -88,6 +98,21 @@ export class UnifiController extends pulumi.ComponentResource {
       { parent: this },
     )
 
+    const nlbStunListener = setupNlbListener(
+      args.nlb,
+      'home-nlb',
+      3478,
+      'UDP',
+      undefined,
+      {
+        deregistrationDelay: 60,
+        healthCheck: {
+          protocol: 'TCP',
+          port: '8443',
+        },
+      },
+    )
+
     for (const dnsType of ['A', 'AAAA']) {
       new aws.route53.Record(
         `${name}-dns-${dnsType}`,
@@ -96,8 +121,8 @@ export class UnifiController extends pulumi.ComponentResource {
           type: dnsType,
           aliases: [
             {
-              name: nlb.loadBalancer.dnsName,
-              zoneId: nlb.loadBalancer.zoneId,
+              name: args.nlb.loadBalancer.dnsName,
+              zoneId: args.nlb.loadBalancer.zoneId,
               evaluateTargetHealth: false,
             },
           ],
@@ -163,7 +188,7 @@ export class UnifiController extends pulumi.ComponentResource {
               portMappings: [
                 albWebAdminTargetGroup,
                 albGuestPortalTargetGroup,
-                args.udp3478Listener.defaultTargetGroup,
+                nlbStunListener,
               ],
             },
           },

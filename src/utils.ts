@@ -42,10 +42,12 @@ export const setupNlbListener = (
   port: number,
   protocol: 'TCP' | 'UDP' | 'TCP_UDP',
   albListener?: awsx.elasticloadbalancingv2.ApplicationListener,
+  targetGroupArgs?: aws.lb.TargetGroupArgs,
 ) => {
   const targetGroup = new aws.lb.TargetGroup(
     `${prefix}-${protocol}-${port}-tg`,
     {
+      ...(targetGroupArgs ?? {}),
       port,
       protocol,
       targetType: albListener ? 'alb' : 'ip',
