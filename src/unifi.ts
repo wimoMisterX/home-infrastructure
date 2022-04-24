@@ -1,7 +1,6 @@
 import * as pulumi from '@pulumi/pulumi'
 import * as aws from '@pulumi/aws'
 import * as awsx from '@pulumi/awsx'
-import { ValidateCertificate } from '@wanews/pulumi-certificate-validation'
 
 export class UnifiController extends pulumi.ComponentResource {
   webAdminUrl: pulumi.Output<string>
@@ -9,52 +8,26 @@ export class UnifiController extends pulumi.ComponentResource {
   constructor(
     name: string,
     args: {
+      vpc: awsx.ec2.Vpc
+      ecsCluster: awsx.ecs.Cluster
+      ecsSubnetIds: pulumi.Input<string[]>
+      https8443Listener: awsx.elasticloadbalancingv2.ApplicationListener
+      https8843Listener: awsx.elasticloadbalancingv2.ApplicationListener
+      udp3478Listener: awsx.elasticloadbalancingv2.NetworkListener
       controllerVersion: pulumi.Input<string>
       hostname: pulumi.Input<string>
-      zoneName: pulumi.Input<string>
+      zoneId: pulumi.Input<string>
     },
     opts?: pulumi.ComponentResourceOptions,
   ) {
     super('unifi-controller', name, args, opts)
 
-    const zone = aws.route53.getZoneOutput(
-      {
-        name: args.zoneName,
-        privateZone: false,
-      },
-      { parent: this },
-    )
+    if (!args.udp3478Listener.defaultTargetGroup) {
+      throw new pulumi.RunError('no default target group for listener')
+    }
 
-    const cert = new aws.acm.Certificate(
-      `${name}-cert`,
-      {
-        domainName: args.hostname,
-        validationMethod: 'DNS',
-      },
-      { parent: this },
-    )
-
-    const validatedCert = new ValidateCertificate(
-      `${name}-cert-validation`,
-      {
-        cert,
-        zones: [
-          {
-            domain: zone.name,
-            zoneId: zone.zoneId,
-          },
-        ],
-      },
-      { parent: this },
-    )
-
-    const alb = new awsx.lb.ApplicationLoadBalancer(
-      `${name}-alb`,
-      {
-        name: `${name}-alb`,
-      },
-      { parent: this },
-    )
+    const nlb = args.udp3478Listener.loadBalancer
+    const alb = args.https8443Listener.loadBalancer
 
     const albWebAdminTargetGroup = alb.createTargetGroup(
       `${name}-alb-web-admin-tg`,
@@ -63,17 +36,24 @@ export class UnifiController extends pulumi.ComponentResource {
         port: 8443,
         protocol: 'HTTPS',
         deregistrationDelay: 60,
+        healthCheck: {
+          protocol: 'HTTPS',
+          path: '/',
+          matcher: '200,302',
+        },
       },
       { parent: this },
     )
-
-    const albWebAdminListener = alb.createListener(
-      `${name}-web-admin-listener`,
+    args.https8443Listener.addListenerRule(
+      `${name}-alb-web-admin-rule`,
       {
-        targetGroup: albWebAdminTargetGroup,
-        port: 8443,
-        protocol: 'HTTPS',
-        certificateArn: validatedCert.validCertificateArn,
+        conditions: [{ hostHeader: { values: [args.hostname] } }],
+        actions: [
+          {
+            type: 'forward',
+            targetGroupArn: albWebAdminTargetGroup.targetGroup.arn,
+          },
+        ],
       },
       { parent: this },
     )
@@ -85,111 +65,26 @@ export class UnifiController extends pulumi.ComponentResource {
         port: 8843,
         protocol: 'HTTPS',
         deregistrationDelay: 60,
+        healthCheck: {
+          protocol: 'HTTPS',
+          path: '/',
+          port: '8443',
+          matcher: '200,302',
+        },
       },
       { parent: this },
     )
-
-    const albGuestPortalListener = alb.createListener(
-      `${name}-guest-portal-listener`,
+    args.https8843Listener.addListenerRule(
+      `${name}-alb-guest-portal-rule`,
       {
-        targetGroup: albGuestPortalTargetGroup,
-        port: 8843,
-        protocol: 'HTTPS',
-        certificateArn: validatedCert.validCertificateArn,
-      },
-      { parent: this },
-    )
-
-    const nlb = new awsx.lb.NetworkLoadBalancer(
-      `${name}-nlb`,
-      {
-        name: `${name}-nlb`,
-      },
-      { parent: this },
-    )
-
-    const nlbWebAdminTargetGroup = new aws.lb.TargetGroup(
-      `${name}-nlb-web-admin-tg`,
-      {
-        name: `${name}-nlb-8443`,
-        port: 8443,
-        protocol: 'TCP',
-        targetType: 'alb',
-        vpcId: nlb.vpc.id,
-      },
-      { parent: this },
-    )
-
-    new aws.lb.TargetGroupAttachment(
-      `${name}-nlb-web-admin-tg-attach`,
-      {
-        targetGroupArn: nlbWebAdminTargetGroup.arn,
-        targetId: alb.loadBalancer.id,
-      },
-      { parent: this, dependsOn: [albWebAdminListener] },
-    )
-
-    new aws.lb.Listener(
-      `${name}-nlb-web-admin-listener`,
-      {
-        loadBalancerArn: nlb.loadBalancer.arn,
-        port: 8443,
-        protocol: 'TCP',
-        defaultActions: [
-          { type: 'forward', targetGroupArn: nlbWebAdminTargetGroup.arn },
+        conditions: [{ hostHeader: { values: [args.hostname] } }],
+        actions: [
+          {
+            type: 'forward',
+            targetGroupArn: albGuestPortalTargetGroup.targetGroup.arn,
+          },
         ],
       },
-      { parent: this },
-    )
-
-    const nlbGuestPortalTargetGroup = new aws.lb.TargetGroup(
-      `${name}-nlb-guest-portal-tg`,
-      {
-        name: `${name}-nlb-8843`,
-        port: 8843,
-        protocol: 'TCP',
-        targetType: 'alb',
-        vpcId: nlb.vpc.id,
-      },
-      { parent: this },
-    )
-
-    new aws.lb.TargetGroupAttachment(
-      `${name}-nlb-guest-portal-tg-attach`,
-      {
-        targetGroupArn: nlbGuestPortalTargetGroup.arn,
-        targetId: alb.loadBalancer.id,
-      },
-      { parent: this, dependsOn: [albGuestPortalListener] },
-    )
-
-    new aws.lb.Listener(
-      `${name}-nlb-guest-portal-listener`,
-      {
-        loadBalancerArn: nlb.loadBalancer.arn,
-        port: 8843,
-        protocol: 'TCP',
-        defaultActions: [
-          { type: 'forward', targetGroupArn: nlbGuestPortalTargetGroup.arn },
-        ],
-      },
-      { parent: this },
-    )
-
-    const nlbStunTargetGroup = nlb.createTargetGroup(
-      `${name}-nlb-stun-tg`,
-      {
-        name: `${name}-nlb-3478`,
-        port: 3478,
-        protocol: 'UDP',
-        deregistrationDelay: 60,
-      },
-      { parent: this },
-    )
-
-    const nlbStunListener = nlb.createListener(
-      `${name}-stun-listener`,
-      { port: 3478, protocol: 'UDP', targetGroup: nlbStunTargetGroup },
       { parent: this },
     )
 
@@ -206,15 +101,41 @@ export class UnifiController extends pulumi.ComponentResource {
               evaluateTargetHealth: false,
             },
           ],
-          zoneId: zone.zoneId,
+          zoneId: args.zoneId,
         },
         { parent: this },
       )
     }
 
-    const controllerService = new awsx.ecs.FargateService(
+    const taskSecurityGroup = new awsx.ec2.SecurityGroup(
+      `${name}-fargate-task-sg`,
+      {
+        vpc: args.vpc,
+      },
+    )
+    awsx.ec2.SecurityGroupRule.ingress(
+      `${name}-fargate-task-any-ingress`,
+      taskSecurityGroup,
+      new awsx.ec2.AnyIPv4Location(),
+      new awsx.ec2.AllTraffic(),
+      'allow everywhere',
+    )
+    awsx.ec2.SecurityGroupRule.egress(
+      `${name}-fargate-task-any-egress`,
+      taskSecurityGroup,
+      new awsx.ec2.AnyIPv4Location(),
+      new awsx.ec2.AllTraffic(),
+      'allow everywhere',
+    )
+
+    new awsx.ecs.FargateService(
       `${name}-fargate-service`,
       {
+        cluster: args.ecsCluster,
+        subnets: args.ecsSubnetIds,
+        securityGroups: [taskSecurityGroup],
+        assignPublicIp: false,
+        healthCheckGracePeriodSeconds: 60,
         taskDefinitionArgs: {
           containers: {
             'unifi-controller': {
@@ -240,9 +161,9 @@ export class UnifiController extends pulumi.ComponentResource {
                 },
               ],
               portMappings: [
-                albWebAdminListener,
-                albGuestPortalListener,
-                nlbStunListener,
+                albWebAdminTargetGroup,
+                albGuestPortalTargetGroup,
+                args.udp3478Listener.defaultTargetGroup,
               ],
             },
           },

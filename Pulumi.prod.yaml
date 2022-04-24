@@ -1,5 +1,6 @@
 config:
   aws:region: ap-southeast-2
+  alb:default-acm-certificate-domain: '*.wimodya-athukorala.com'
+  alb:default-acm-certificate-domain-route53-zone-name: wimodya-athukorala.com
   unifi:hostname: unifi.wimodya-athukorala.com
-  unifi:route53-zone-name: wimodya-athukorala.com
   unifi:controller-version: 7.0.25
